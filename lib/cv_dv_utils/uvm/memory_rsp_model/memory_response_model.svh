@@ -647,15 +647,9 @@ class memory_response_model#(int w_addr = 64, int w_data = 512, int w_id = 16)  
            // WRITE
            // --> If true, remove the reservation 
            // --------------------------------------------------------
-           foreach(m_mem_rsp_vif.req_strb[i]) begin
-             if(m_mem_rsp_vif.req_strb[i] == 1) begin
-               if(m_memory[req_addr].ldex_bytes.exists(m_mem_rsp_vif.src_id)) begin
-                 if( m_memory[req_addr].ldex_bytes[m_mem_rsp_vif.src_id][i] == 1) begin
-                   m_memory[req_addr].ldex_bytes.delete(m_mem_rsp_vif.src_id);
-                   break;
-                 end
-               end
-             end
+           foreach(m_memory[req_addr].ldex_bytes[i]) begin
+             if(|(m_memory[req_addr].ldex_bytes[i] & m_mem_rsp_vif.req_strb))
+               m_memory[req_addr].ldex_bytes.delete(i);
            end
            // --------------------------------------------------------
            // Generate new response with delay for the incoming transaction 
@@ -729,7 +723,7 @@ class memory_response_model#(int w_addr = 64, int w_data = 512, int w_id = 16)  
   
    // -----------------------------------------------------------------
    // In the case of AMO : 
-   //  ->Two response read and write are expected
+   //  ->Two response read and write are expected when req_wrn is set
    //  -> Except for LDEX/STEX 
    // ----------------------------------------------------------------
    virtual task populate_amo_rd_wr_rsp_queue();
@@ -815,9 +809,10 @@ class memory_response_model#(int w_addr = 64, int w_data = 512, int w_id = 16)  
            new_rd_rsp_entry.data     = m_memory[req_addr].data;
 
            // --------------------------------------------------
-           // In case of ATOMIC STEX , do not send read response
+           // In case of ATOMIC STORE/STEX, do not send read response
            // --------------------------------------------------
-           if(!(m_mem_rsp_vif.amo_op == MEM_ATOMIC_STEX)) begin
+           if((m_mem_rsp_vif.req_wrn) &&
+              !(m_mem_rsp_vif.amo_op == MEM_ATOMIC_STEX)) begin
 
              new_rd_rsp_entry.id         = m_mem_rsp_vif.req_id;
              // ---------------------------------------------
@@ -883,9 +878,55 @@ class memory_response_model#(int w_addr = 64, int w_data = 512, int w_id = 16)  
        
              q_index1.delete();
              q_index.delete();
-           end // !MEM_ATOMIC_STEX
+           end
+           if(m_mem_rsp_vif.amo_op == MEM_ATOMIC_STEX) begin
+             new_wr_rsp_entry            = new();
+             new_wr_rsp_entry.id         = m_mem_rsp_vif.req_id;
+             new_wr_rsp_entry.ex_fail     = 0;
+
+             // ----------------------------------------------------
+             // If error exclusive flag is set
+             // ----------------------------------------------------
+             if(m_rsp_cfg.insert_wr_exclusive_fail) begin
+                if(wr_rsp_exclusive_fail_counter < m_rsp_cfg.num_wr_exclusive_fails) begin
+                    new_wr_rsp_entry.ex_fail     = ($urandom_range(0, 5) == 2) ? 1: 0 ;
+                    `uvm_info("MEMORY RESPONSE MODEL", $sformatf("Inserted SC Exclusive Error %d", new_wr_rsp_entry.ex_fail), UVM_FULL);
+                    if(new_wr_rsp_entry.ex_fail)  wr_rsp_exclusive_fail_counter++;
+               end
+             end
+
+             // --------------------------------------------------------
+             // In the case of STEX,
+             // check if reservation exists for the same byte accessed by
+             // STEX
+             // --------------------------------------------------------
+             if(m_memory[req_addr].ldex_bytes.exists(m_mem_rsp_vif.src_id)) begin
+               foreach(m_mem_rsp_vif.req_strb[i]) begin
+                 if(m_mem_rsp_vif.req_strb[i] == 1) begin
+                   if( m_memory[req_addr].ldex_bytes[m_mem_rsp_vif.src_id][i] == 0) begin
+                     new_wr_rsp_entry.ex_fail = 1;
+                    `uvm_info("MEMORY RESPONSE MODEL", $sformatf("SC FAILED %s", new_wr_rsp_entry.convert2string()), UVM_FULL);
+                   end
+                 end
+               end
+             end else begin
+               new_wr_rsp_entry.ex_fail = 1;
+             end
+             m_memory[req_addr].ldex_bytes.delete(m_mem_rsp_vif.src_id);
+           end // MEM_ATOMIC_STEX
            
            
+           // --------------------------------------------------------
+           // For any other access remove the reservation
+           // --------------------------------------------------------
+           if((m_mem_rsp_vif.amo_op != MEM_ATOMIC_LDEX) &&
+              (m_mem_rsp_vif.amo_op != MEM_ATOMIC_STEX)) begin
+             foreach(m_memory[req_addr].ldex_bytes[i]) begin
+               if(|(m_memory[req_addr].ldex_bytes[i] & m_mem_rsp_vif.req_strb))
+                 m_memory[req_addr].ldex_bytes.delete(i);
+             end
+           end
+
            wr_stb  = m_mem_rsp_vif.req_strb;
            wr_data = m_mem_rsp_vif.req_data;
 
@@ -915,7 +956,7 @@ class memory_response_model#(int w_addr = 64, int w_data = 512, int w_id = 16)  
 
              if(wr_stb[k] == 1'b1) begin
                case(m_mem_rsp_vif.amo_op)
-                 MEM_ATOMIC_STEX :     m_memory[req_addr].data[8*k +: 8]    =       wr_data[8*k +: 8]                                ; 
+                 MEM_ATOMIC_STEX :     if(!new_wr_rsp_entry.ex_fail) m_memory[req_addr].data[8*k +: 8]    =       wr_data[8*k +: 8]                                ;
                  MEM_ATOMIC_CLR  :     m_memory[req_addr].data[8*k +: 8]    =      ~wr_data[8*k +: 8] & m_memory[req_addr].data[8*k +: 8];
                  MEM_ATOMIC_SET  :     m_memory[req_addr].data[8*k +: 8]    =       wr_data[8*k +: 8] | m_memory[req_addr].data[8*k +: 8];
                  MEM_ATOMIC_EOR  :     m_memory[req_addr].data[8*k +: 8]    =       wr_data[8*k +: 8] ^ m_memory[req_addr].data[8*k +: 8];
@@ -980,42 +1021,12 @@ class memory_response_model#(int w_addr = 64, int w_data = 512, int w_id = 16)  
            // In case of ATOMIC LDEX do not send write response
            // --------------------------------------------------------
            if(!(m_mem_rsp_vif.amo_op == MEM_ATOMIC_LDEX)) begin
-              new_wr_rsp_entry            = new();
-              new_wr_rsp_entry.id         = m_mem_rsp_vif.req_id;
-              new_wr_rsp_entry.ex_fail     = 0;
-
-              // --------------------------------------------------------
-              // In the case of STEX,
-              // check if reservation exists for the same byte accessed by
-              // STEX
-              // For any other access remove the reservation 
-              // --------------------------------------------------------
-              if(m_memory[req_addr].ldex_bytes.exists(m_mem_rsp_vif.src_id)) begin
-                if(m_mem_rsp_vif.amo_op == MEM_ATOMIC_STEX) begin
-                  foreach(m_mem_rsp_vif.req_strb[i]) begin
-                    if(m_mem_rsp_vif.req_strb[i] == 1) begin
-                      if( m_memory[req_addr].ldex_bytes[m_mem_rsp_vif.src_id][i] == 0) begin
-                        new_wr_rsp_entry.ex_fail = 1;
-                       `uvm_info("MEMORY RESPONSE MODEL", $sformatf("SC FAILED %s", new_wr_rsp_entry.convert2string()), UVM_FULL);
-                      end
-                    end
-                  end
-                  m_memory[req_addr].ldex_bytes.delete(m_mem_rsp_vif.src_id);
-                end
+              if(!(m_mem_rsp_vif.amo_op == MEM_ATOMIC_STEX)) begin
+                new_wr_rsp_entry            = new();
+                new_wr_rsp_entry.id         = m_mem_rsp_vif.req_id;
+                new_wr_rsp_entry.ex_fail     = 0;
               end
 
-              if(m_mem_rsp_vif.amo_op ==  MEM_ATOMIC_STEX) begin
-                // ----------------------------------------------------
-                // If error exclusive flag is set
-                // ----------------------------------------------------
-                if(m_rsp_cfg.insert_wr_exclusive_fail) begin
-                   if(wr_rsp_exclusive_fail_counter < m_rsp_cfg.num_wr_exclusive_fails) begin
-                       new_wr_rsp_entry.ex_fail     = ($urandom_range(0, 5) == 2) ? 1: 0 ;
-                       `uvm_info("MEMORY RESPONSE MODEL", $sformatf("Inserted SC Exclusive Error %d", new_wr_rsp_entry.ex_fail), UVM_FULL);
-                   end
-                   if(new_wr_rsp_entry.ex_fail)  wr_rsp_exclusive_fail_counter++;
-                end
-              end
               // ----------------------------------------------------
               // If error flag is set
               // -> Send AMO write error response

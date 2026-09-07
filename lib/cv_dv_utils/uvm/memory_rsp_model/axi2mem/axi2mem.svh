@@ -339,34 +339,34 @@ class axi2mem#(int unsigned w_addr = 0,  int unsigned w_data = 0, int unsigned w
                case(req.aw_chan.atop[2:0])
                  AXI_ATOMIC_ADD   : mem_wr_vif.amo_op = MEM_ATOMIC_ADD ;
                  AXI_ATOMIC_CLR   : mem_wr_vif.amo_op = MEM_ATOMIC_CLR ;
-                 AXI_ATOMIC_EOR   : mem_wr_vif.amo_op = MEM_ATOMIC_SET ;
-                 AXI_ATOMIC_SET   : mem_wr_vif.amo_op = MEM_ATOMIC_EOR ;
+                 AXI_ATOMIC_EOR   : mem_wr_vif.amo_op = MEM_ATOMIC_EOR ;
+                 AXI_ATOMIC_SET   : mem_wr_vif.amo_op = MEM_ATOMIC_SET ;
                  AXI_ATOMIC_SMAX  : mem_wr_vif.amo_op = MEM_ATOMIC_SMAX;
                  AXI_ATOMIC_SMIN  : mem_wr_vif.amo_op = MEM_ATOMIC_SMIN;
                  AXI_ATOMIC_UMAX  : mem_wr_vif.amo_op = MEM_ATOMIC_UMAX;
                  AXI_ATOMIC_UMIN  : mem_wr_vif.amo_op = MEM_ATOMIC_UMIN;
                endcase  
-               q_num_ar_chan_req[req.aw_chan.id].push_back(0);
              end
              AXI_ATOMIC_LOAD   : begin
                // Requires a read response 
                mem_wr_vif.req_amo = 1;  
-               mem_wr_vif.req_wrn = 0;
+               mem_wr_vif.req_wrn = 1;
                case(req.aw_chan.atop[2:0])
                  AXI_ATOMIC_ADD   : mem_wr_vif.amo_op = MEM_ATOMIC_ADD ;
                  AXI_ATOMIC_CLR   : mem_wr_vif.amo_op = MEM_ATOMIC_CLR ;
-                 AXI_ATOMIC_EOR   : mem_wr_vif.amo_op = MEM_ATOMIC_SET ;
-                 AXI_ATOMIC_SET   : mem_wr_vif.amo_op = MEM_ATOMIC_EOR ;
+                 AXI_ATOMIC_EOR   : mem_wr_vif.amo_op = MEM_ATOMIC_EOR ;
+                 AXI_ATOMIC_SET   : mem_wr_vif.amo_op = MEM_ATOMIC_SET ;
                  AXI_ATOMIC_SMAX  : mem_wr_vif.amo_op = MEM_ATOMIC_SMAX;
                  AXI_ATOMIC_SMIN  : mem_wr_vif.amo_op = MEM_ATOMIC_SMIN;
                  AXI_ATOMIC_UMAX  : mem_wr_vif.amo_op = MEM_ATOMIC_UMAX;
                  AXI_ATOMIC_UMIN  : mem_wr_vif.amo_op = MEM_ATOMIC_UMIN;
                endcase              
+               q_num_ar_chan_req[req.aw_chan.id].push_back(0);
              end
              AXI_ATOMIC_OTHERS : begin
                // Requires a read response 
                mem_wr_vif.req_amo = 1;  
-               mem_wr_vif.req_wrn = 0;
+               mem_wr_vif.req_wrn = 1;
                case(req.aw_chan.atop[3:0])
                  AXI_ATOMIC_SWAP : mem_wr_vif.amo_op = MEM_ATOMIC_SWAP;
                  AXI_ATOMIC_CMP  : mem_wr_vif.amo_op = MEM_ATOMIC_CMP;                
@@ -378,7 +378,7 @@ class axi2mem#(int unsigned w_addr = 0,  int unsigned w_data = 0, int unsigned w
   
            if(req.aw_chan.lock == 1) begin 
              mem_wr_vif.amo_op    = MEM_ATOMIC_STEX;
-             mem_rd_vif.req_amo   = 1;
+             mem_wr_vif.req_amo   = 1;
            end
            do begin
              @ (posedge mem_wr_vif.clk);

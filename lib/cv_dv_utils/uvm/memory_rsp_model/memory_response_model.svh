@@ -596,6 +596,7 @@ class memory_response_model#(int w_addr = 64, int w_data = 512, int w_id = 16)  
        // -----------------------------------------
        int                         q_index[$];
        int                         q_index1[$];
+       integer                     ldex_q_index[$];
 
        // -----------------------------------------
        // New node to m_memory list 
@@ -647,10 +648,11 @@ class memory_response_model#(int w_addr = 64, int w_data = 512, int w_id = 16)  
            // WRITE
            // --> If true, remove the reservation 
            // --------------------------------------------------------
-           foreach(m_memory[req_addr].ldex_bytes[i]) begin
-             if(|(m_memory[req_addr].ldex_bytes[i] & m_mem_rsp_vif.req_strb))
-               m_memory[req_addr].ldex_bytes.delete(i);
-           end
+           ldex_q_index = m_memory[req_addr].ldex_bytes.find_index(item) with
+                          (|(item & m_mem_rsp_vif.req_strb));
+           foreach(ldex_q_index[i])
+             m_memory[req_addr].ldex_bytes.delete(ldex_q_index[i]);
+           ldex_q_index.delete();
            // --------------------------------------------------------
            // Generate new response with delay for the incoming transaction 
            // --------------------------------------------------------
@@ -733,6 +735,7 @@ class memory_response_model#(int w_addr = 64, int w_data = 512, int w_id = 16)  
        // -----------------------------------------
        int                         q_index[$];
        int                         q_index1[$];
+       integer                     ldex_q_index[$];
 
        // -----------------------------------------
        // New node to m_memory list 
@@ -799,7 +802,7 @@ class memory_response_model#(int w_addr = 64, int w_data = 512, int w_id = 16)  
            // Remove previous lock 
            // -------------------------------------------------------
            if(m_mem_rsp_vif.amo_op == MEM_ATOMIC_LDEX) begin
-             foreach(m_memory[req_addr].ldex_bytes[i]) m_memory[req_addr].ldex_bytes.delete(i);
+             m_memory[req_addr].ldex_bytes.delete();
              m_memory[req_addr].ldex_bytes[m_mem_rsp_vif.src_id] = m_mem_rsp_vif.req_strb; 
            end
            // --------------------------------------------------
@@ -921,10 +924,11 @@ class memory_response_model#(int w_addr = 64, int w_data = 512, int w_id = 16)  
            // --------------------------------------------------------
            if((m_mem_rsp_vif.amo_op != MEM_ATOMIC_LDEX) &&
               (m_mem_rsp_vif.amo_op != MEM_ATOMIC_STEX)) begin
-             foreach(m_memory[req_addr].ldex_bytes[i]) begin
-               if(|(m_memory[req_addr].ldex_bytes[i] & m_mem_rsp_vif.req_strb))
-                 m_memory[req_addr].ldex_bytes.delete(i);
-             end
+             ldex_q_index = m_memory[req_addr].ldex_bytes.find_index(item) with
+                            (|(item & m_mem_rsp_vif.req_strb));
+             foreach(ldex_q_index[i])
+               m_memory[req_addr].ldex_bytes.delete(ldex_q_index[i]);
+             ldex_q_index.delete();
            end
 
            wr_stb  = m_mem_rsp_vif.req_strb;
